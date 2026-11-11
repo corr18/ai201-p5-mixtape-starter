@@ -94,3 +94,28 @@ def test_streak_increments_on_sunday(app, user):
 
         update_listening_streak(u, sunday)
         assert u.listening_streak == 2  # Should increment, not reset
+
+
+def test_streak_increments_across_full_week(app, user):
+    """
+    Regression for Issue #1: listening every day for 14 days (two full
+    Monday-Sunday weeks, so the Saturday->Sunday boundary is crossed twice)
+    must yield a streak of 14 with no resets on any weekday.
+    """
+    with app.app_context():
+        u = db.session.get(User, user.id)
+        start = datetime(2024, 6, 10, 8, 0, 0, tzinfo=timezone.utc)  # Monday
+        for day in range(14):
+            update_listening_streak(u, start + timedelta(days=day))
+            assert u.listening_streak == day + 1, (
+                f"streak broke on {(start + timedelta(days=day)).strftime('%A')}"
+            )
+
+
+def test_streak_resets_when_sunday_skipped(app, user):
+    """The other side of the boundary: Saturday -> Monday still resets."""
+    with app.app_context():
+        u = db.session.get(User, user.id)
+        update_listening_streak(u, datetime(2024, 6, 15, 12, tzinfo=timezone.utc))  # Sat
+        update_listening_streak(u, datetime(2024, 6, 17, 12, tzinfo=timezone.utc))  # Mon
+        assert u.listening_streak == 1
