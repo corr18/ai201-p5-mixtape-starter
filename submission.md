@@ -2,7 +2,36 @@
 
 ## AI Usage
 
-_(written at the end — see bottom of milestone 4)_
+I used **Claude Code (Claude Opus 5.5)** as an agent in my terminal for this project, which my AI201 course allows. To be clear about the collaboration: Claude did most of the hands-on navigation, reproduction, fixing, test writing, and first drafts of this document. I directed the work and reviewed the results. Specifically:
+
+- **Codebase orientation.** Claude read `README.md`, `app.py`, `models.py`, every route and service, `seed_data.py`, and the existing tests before touching any issue, then drafted the codebase map. It was most useful for connecting things across files: for example, seeing that `playlist_entries` has NOT NULL `position`/`added_by` columns while `Playlist.songs` is a plain `secondary` relationship, and that notifications are created imperatively (no event hooks).
+- **Reproduction before fixing.** Claude seeded the DB, ran the app, and reproduced each issue with real HTTP calls (`curl`) and, for the time-dependent bugs, small scripts with controlled timestamps: a Saturday-to-Sunday streak call for #1, and a 23:30-yesterday listen for #2. It ran the existing test suite first as a baseline (4 failing tests mapped to issues #1, #3, and #5). No code was changed until all five issues had reproduced.
+- **Tracing and explaining.** Claude followed each route to its service and compared code paths. For #4 it compared `add_to_playlist()` and `rate_song()` side by side. For #3 it explained why an outer join on an association table multiplies rows.
+- **Where claims had to be verified, not trusted:**
+  - For #3, the explanation that "the legacy `Query` API de-duplicates entities but 2.0 `select().scalars()` doesn't" came partly from recall and partly from the earlier commit message in git history. We didn't rely on that alone: we ran the same join three ways against the seeded DB (raw SQL = 3 rows, legacy `Query` = 1, `select().scalars()` = 3) before writing it into the RCA.
+  - For every fix, the new or updated test was run against the **original** code (by stashing the fix) to confirm it actually fails without the fix. A test that passes either way proves nothing.
+  - The add-to-playlist 500 was **not** found by reading code. It only appeared when we actually ran Issue #5's step 2 ("add a song"), which is a good argument for reproducing bugs and not just pattern-matching the code.
+  - A couple of early HTTP checks failed only because they ran before the Flask server had finished starting. We recognized these as harness timing problems, not app behavior, and re-ran them.
+- **Fix design choices I agreed with:** removing the unnecessary join in #3 rather than adding `.distinct()` to hide duplicates; using UTC midnight in #2 to match the streak service's existing definition of a "day"; and mirroring the existing `add_to_playlist` notification pattern exactly in #4 rather than inventing a new mechanism.
+
+I re-read each RCA entry, the diffs, and the test results before submitting.
+
+---
+
+## Git log (`bugfix/mixtape`)
+
+Screenshot: _[insert screenshot of `git log --oneline` here]_
+
+```
+9f5efab fix: set position and added_by when adding a song to a playlist
+a7c957e fix: return every playlist song instead of dropping the last one
+7a74eca fix: notify song sharer when a friend rates their song
+3fd2e7b fix: remove song_tags join that duplicated multi-tag songs in search
+d392b61 fix: limit Friends Listening Now to listens since midnight UTC
+8e9a6b4 fix: stop resetting listening streak on Sundays
+fb85cc5 docs: add codebase map to submission.md
+# (followed by one final docs commit adding this AI usage section)
+```
 
 ---
 
