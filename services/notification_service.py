@@ -6,8 +6,8 @@ Notifications are generated when friends interact with a user's shared songs.
 """
 
 from app import db
-from models import Notification, Song, User, Rating
-from sqlalchemy import desc
+from models import Notification, Song, User, Rating, playlist_entries
+from sqlalchemy import desc, func, select
 
 
 def create_notification(user_id: str, notification_type: str, body: str) -> Notification:
@@ -56,10 +56,31 @@ def add_to_playlist(playlist_id: str, song_id: str, added_by_user_id: str) -> No
     if not playlist:
         raise ValueError(f"Playlist {playlist_id} not found")
 
-    # Add the song to the playlist
-    if song not in playlist.songs:
-        playlist.songs.append(song)
+    # Add the song to the playlist. playlist_entries carries NOT NULL position
+    # and added_by columns, which appending via the Playlist.songs relationship
+    # cannot fill, so insert the entry row explicitly at the end of the playlist.
+    already_in_playlist = db.session.execute(
+        select(playlist_entries.c.song_id).where(
+            playlist_entries.c.playlist_id == playlist_id,
+            playlist_entries.c.song_id == song_id,
+        )
+    ).first()
+    if not already_in_playlist:
+        last_position = db.session.execute(
+            select(func.max(playlist_entries.c.position)).where(
+                playlist_entries.c.playlist_id == playlist_id
+            )
+        ).scalar()
+        db.session.execute(
+            playlist_entries.insert().values(
+                playlist_id=playlist_id,
+                song_id=song_id,
+                position=(last_position or 0) + 1,
+                added_by=added_by_user_id,
+            )
+        )
         db.session.commit()
+        db.session.expire(playlist, ["songs"])
 
     # Notify the person who originally shared the song (if it wasn't them who added it)
     if song.shared_by != added_by_user_id:

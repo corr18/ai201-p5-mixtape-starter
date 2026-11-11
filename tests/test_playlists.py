@@ -105,3 +105,28 @@ def test_single_song_playlist_returns_that_song(app):
 
         songs = get_playlist_songs(playlist.id)
         assert [s["title"] for s in songs] == ["Only Track"]
+
+
+def test_added_song_is_appended_and_returned(app, seed_playlist):
+    """
+    Adding a song through the service must succeed (position/added_by are
+    NOT NULL), place it last, and make it visible in get_playlist_songs.
+    """
+    from services.notification_service import add_to_playlist
+
+    with app.app_context():
+        user = db.session.get(User, seed_playlist["user"].id)
+        new_song = Song(title="Track 6", artist="Various", shared_by=user.id)
+        db.session.add(new_song)
+        db.session.commit()
+        playlist_id = seed_playlist["playlist"].id
+
+        add_to_playlist(playlist_id, new_song.id, user.id)
+        add_to_playlist(playlist_id, new_song.id, user.id)  # duplicate add is a no-op
+
+        titles = [s["title"] for s in get_playlist_songs(playlist_id)]
+        assert titles == [f"Track {i}" for i in range(1, 7)]
+        row = db.session.execute(
+            playlist_entries.select().where(playlist_entries.c.song_id == new_song.id)
+        ).one()
+        assert row.position == 6 and row.added_by == user.id

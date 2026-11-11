@@ -151,3 +151,21 @@ _(written at the end — see bottom of milestone 4)_
 - **Ordering:** `test_playlist_returns_songs_in_order` passes, so the order still comes from `playlist_entries.position`.
 - **Other callers:** `add_to_playlist()` imports `get_playlist_songs` but never calls it, and `get_playlist()` and `get_user_playlists()` don't use it. The route's `count` now equals the number of `playlist_entries` rows.
 - After the add-to-playlist fix below, I re-ran darius's full scenario end to end (see the next entry).
+
+### **Additional defect (found while reproducing Issue #5) — Adding a song to a playlist returns 500**
+
+This one isn't in the tracker, but it blocked step 2 of Issue #5 ("Added one more song … and re-fetched"), so I fixed it in its own commit.
+
+**How I reproduced it.** `POST /playlists/<friday_energy>/songs` with `{"song_id": <midnight_drive>, "added_by": <simone>}`, using a song not already in the playlist, returned **500 Internal Server Error**. The server log showed `sqlite3.IntegrityError: NOT NULL constraint failed: playlist_entries.position`. Adding a song that was *already* in the playlist returned 201, because that path skips the insert. That's why the seeded notification and my Issue #4 control case seemed to work.
+
+**How I found the root cause.** The error named the column. `models.py` defines `playlist_entries` with `position` and `added_by` both `nullable=False`, and `Playlist.songs` is a plain `secondary=playlist_entries` relationship. `add_to_playlist()` in `services/notification_service.py` adds songs with `playlist.songs.append(song)`. When SQLAlchemy persists an append to a `secondary` relationship, it only knows the two foreign keys, so it inserts `(playlist_id, song_id)` and leaves `position`/`added_by` NULL. The seed data and the tests never go through this path: they write `playlist_entries.insert().values(..., position=..., added_by=...)` directly, which is why nothing caught it.
+
+**The root cause.** The association table carries required payload columns (`position`, `added_by`), but `add_to_playlist()` adds through the relationship collection, which has no way to supply them. Every add of a new song violates the NOT NULL constraint and rolls back.
+
+**My fix.** In `add_to_playlist()`, I replaced the relationship append with an explicit insert into `playlist_entries` that sets `position = MAX(position) + 1` for that playlist (1 for an empty playlist) and `added_by = added_by_user_id`. The new song lands at the end of the playlist, so Issue #5's "most recently added = last" holds. The "already in the playlist?" check now queries `playlist_entries` directly, and I expire the cached `playlist.songs` collection after the insert. The notification logic after it is unchanged.
+
+**Side-effect check / end-to-end Issue #5 scenario.**
+- Friday Energy before: 7 songs, all shown. simone adds *Midnight Drive* → 201, then re-fetching shows **8**, with *Midnight Drive* last. The DB row has `position=8` and `added_by=simone`. Nothing gets hidden, unlike darius's report.
+- The sharer (nova) received the existing `song_added_to_playlist` notification, so the notification path still works.
+- Re-adding the same song is still a no-op on the playlist (count stays 8, and the composite primary key isn't violated).
+- New test `test_added_song_is_appended_and_returned` in `tests/test_playlists.py` covers the append, the position and `added_by` values, the duplicate add, and visibility through `get_playlist_songs()`. The full suite passes: 23 tests.
