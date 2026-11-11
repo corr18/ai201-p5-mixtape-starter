@@ -20,7 +20,7 @@ I re-read each RCA entry, the diffs, and the test results before submitting.
 
 ## Git log (`bugfix/mixtape`)
 
-Screenshot: _[insert screenshot of `git log --oneline` here]_
+![git log --oneline on bugfix/mixtape](screenshots/git-log.png)
 
 ```
 9f5efab fix: set position and added_by when adding a song to a playlist
@@ -30,7 +30,7 @@ a7c957e fix: return every playlist song instead of dropping the last one
 d392b61 fix: limit Friends Listening Now to listens since midnight UTC
 8e9a6b4 fix: stop resetting listening streak on Sundays
 fb85cc5 docs: add codebase map to submission.md
-# (followed by one final docs commit adding this AI usage section)
+# (followed by two docs commits: the AI usage section and this screenshot)
 ```
 
 ---
