@@ -84,3 +84,24 @@ def test_empty_playlist_returns_empty_list(app):
 
         songs = get_playlist_songs(playlist.id)
         assert songs == []
+
+
+def test_single_song_playlist_returns_that_song(app):
+    """
+    Regression for Issue #5 at the boundary: a playlist with exactly one song
+    must return it (dropping the last element would return []).
+    """
+    with app.app_context():
+        user = User(username="solo", email="solo@example.com")
+        db.session.add(user)
+        db.session.flush()
+        song = Song(title="Only Track", artist="Solo", shared_by=user.id)
+        playlist = Playlist(name="One Song", created_by=user.id)
+        db.session.add_all([song, playlist])
+        db.session.flush()
+        db.session.execute(playlist_entries.insert().values(
+            playlist_id=playlist.id, song_id=song.id, position=1, added_by=user.id))
+        db.session.commit()
+
+        songs = get_playlist_songs(playlist.id)
+        assert [s["title"] for s in songs] == ["Only Track"]

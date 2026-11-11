@@ -135,3 +135,19 @@ _(written at the end — see bottom of milestone 4)_
 - `add_to_playlist()` and its notification are untouched.
 - I added `tests/test_notifications.py` with three tests: a friend's rating notifies the sharer (fails on the original code, which I confirmed by stashing the fix), self-rating doesn't notify, and a re-rate still leaves exactly one `Rating` with the new score.
 - Design note: a re-rate also sends a notification, the same way `add_to_playlist()` notifies on every call. Suppressing notifications on re-rates would be a product decision outside this bug.
+
+### **Issue #5 — The last song in a playlist never shows up**
+
+**How I reproduced it.** In the seeded DB, "Friday Energy" has **7** rows in `playlist_entries` (I checked with `sqlite3`: positions 1–7, ending with *Harlem Renaissance*). `GET /playlists/<friday_energy>/songs` returned `count: 6`, and the missing song was *Harlem Renaissance*, the one at the highest `position`. The other two seeded playlists each returned 6 of 7 as well, always missing their last entry. The existing tests `test_playlist_returns_all_songs` (expected 5, got 4) and `test_playlist_returns_songs_in_order` (missing "Track 5") failed too. When I tried darius's second step (adding a song with `POST /playlists/<id>/songs`), the endpoint returned a **500**. That is a separate defect, documented below, and it blocked the live "add a song and re-fetch" repro until I fixed it.
+
+**How I found the root cause.** `GET /playlists/<id>/songs` → `routes/playlists.py::get_songs()`, which returns `{"songs": songs, "count": len(songs)}`. The count is computed from the list the service returns, so the song was being dropped inside the service. In `playlist_service.get_playlist_songs()`, the query (join `Song` to `playlist_entries`, filter by playlist, `ORDER BY position ASC`) is correct: running the same query directly returned all 7 songs in order. The return line, though, is `[song.to_dict() for song in songs[:-1]]`. In Python, `[:-1]` means "everything except the last element". Because the list is sorted by `position` ascending, the last element is always the most recently added song. That explains darius's observation exactly: adding a new song makes the previously hidden song second-to-last (now shown), and the new song becomes the one hidden. The function's docstring explicitly says "This function returns all songs in the playlist," so the slice contradicts the contract.
+
+**The root cause.** `get_playlist_songs()` in `services/playlist_service.py` correctly fetched every song ordered by `position`, then serialized `songs[:-1]` instead of `songs`. The slice always discarded the final element, which in position order is the newest song. Every playlist lost exactly one song: a 7-song playlist showed 6, and a 1-song playlist would show none.
+
+**My fix.** I changed the return to `[song.to_dict() for song in songs]`, a one-character-class change that removes the slice. The query and ordering were already right, so nothing else needed to change.
+
+**Side-effect check.**
+- **Both sides of the boundary:** all three seeded playlists now return 7 of 7, in position order, with the last-position song included. The empty-playlist test still returns `[]` (slicing an empty list was harmless, and so is not slicing it). I added `test_single_song_playlist_returns_that_song`: the smallest non-empty case, where the old code returned `[]`.
+- **Ordering:** `test_playlist_returns_songs_in_order` passes, so the order still comes from `playlist_entries.position`.
+- **Other callers:** `add_to_playlist()` imports `get_playlist_songs` but never calls it, and `get_playlist()` and `get_user_playlists()` don't use it. The route's `count` now equals the number of `playlist_entries` rows.
+- After the add-to-playlist fix below, I re-ran darius's full scenario end to end (see the next entry).
