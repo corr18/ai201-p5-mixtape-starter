@@ -117,3 +117,11 @@ def test_search_returns_empty_for_no_match(app, seed_songs):
     with app.app_context():
         results = search_songs("zzz_no_match_zzz")
         assert results == []
+
+
+def test_search_multi_tag_song_still_includes_all_tags(app, seed_songs):
+    """De-duplicating results must not drop tags from the returned song."""
+    with app.app_context():
+        results = search_songs("Anthem")
+        assert len(results) == 1
+        assert sorted(results[0]["tags"]) == ["boom bap", "hip-hop", "rap"]
