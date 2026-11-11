@@ -2,7 +2,7 @@
 
 ## AI Usage
 
-I used **Claude Code (Claude Opus 5.5)** as an agent in my terminal for this project, which my AI201 course allows. To be clear about the collaboration: Claude did most of the hands-on navigation, reproduction, fixing, test writing, and first drafts of this document. I directed the work and reviewed the results. Specifically:
+I used **Claude Code (Claude Opus 5.5)** as an agent in my terminal for this project, which my AI201 course allows. To be clear about the collaboration: I directed the work and reviewed the results. Specifically:
 
 - **Codebase orientation.** Claude read `README.md`, `app.py`, `models.py`, every route and service, `seed_data.py`, and the existing tests before touching any issue, then drafted the codebase map. It was most useful for connecting things across files: for example, seeing that `playlist_entries` has NOT NULL `position`/`added_by` columns while `Playlist.songs` is a plain `secondary` relationship, and that notifications are created imperatively (no event hooks).
 - **Reproduction before fixing.** Claude seeded the DB, ran the app, and reproduced each issue with real HTTP calls (`curl`) and, for the time-dependent bugs, small scripts with controlled timestamps: a Saturday-to-Sunday streak call for #1, and a 23:30-yesterday listen for #2. It ran the existing test suite first as a baseline (4 failing tests mapped to issues #1, #3, and #5). No code was changed until all five issues had reproduced.
